@@ -10,9 +10,12 @@ tmp/
 *.log
 *.bak
 
-# Local scope allowlists and alternate ledgers (site- or wave-specific)
+# Local scope allowlists (site- or wave-specific)
 scope*.txt
-!done_racks.txt.example
+
+# NOTE: done_racks.txt is deliberately TRACKED, not ignored — it is the shared
+# completion ledger and must be identical for everyone running the tracker.
+# Keep private what-if ledgers out of the way with DONE_FILE / --done instead.
 
 # macOS / editor cruft
 .DS_Store
