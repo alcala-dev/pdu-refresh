@@ -1,0 +1,21 @@
+# Generated manifests — contain BMC IPs and serials. Never commit.
+*_manifest_*.csv
+manifest*.csv
+*.csv
+
+# Local scratch / working files
+scratch/
+tmp/
+*.tmp
+*.log
+*.bak
+
+# Local scope allowlists and alternate ledgers (site- or wave-specific)
+scope*.txt
+!done_racks.txt.example
+
+# macOS / editor cruft
+.DS_Store
+.vscode/
+.idea/
+*.swp
