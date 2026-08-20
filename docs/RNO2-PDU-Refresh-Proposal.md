@@ -356,9 +356,19 @@ completion ledger.
 One rack id per line (e.g. `s2-r024`); `#` comments and blank lines ignored. **Append a rack the moment
 its PDU swap is verified complete.** Once a rack is in the ledger it counts as done for *every* org that
 had a node in it — that's what makes the "big orgs need less work later" math correct.
+
+The ledger is **shared state, tracked in git**, because several people run the tracker and progress must
+match on every desktop. So marking a rack complete is a four-step action, not a one-liner — an unpushed
+completion is invisible to everyone else and will get re-planned into someone's next wave:
 ```bash
-echo "s2-r024" >> done_racks.txt          # mark a rack complete
+git pull --rebase                                   # start from everyone else's completions
+echo "s2-r024" >> done_racks.txt                    # mark a rack complete
+sort -u -o done_racks.txt done_racks.txt            # keep sorted — minimizes merge conflicts
+git commit -am "chore(ledger): s2-r024 PDU swap complete" && git push
 ```
+**Pull before planning a wave**, or the planner will hand you racks that are already done. A merge
+conflict in the ledger is never a real disagreement — it's an append-only set, so union both sides and
+re-sort (see the README).
 Optional: `--scope <file>` (a rack allowlist, one id per line) limits every view to the racks actually in
 scope for the refresh; default is every rack currently reporting a node.
 
@@ -417,6 +427,9 @@ CSVs and `> file` redirects stay clean). Force with `--color always`, disable wi
 
 ### Typical daily loop
 ```bash
+# 0. Sync the shared ledger first — someone else may have finished racks
+git pull --rebase
+
 # 1. Morning: where do we stand, and can we cover H100 today?
 ./rno2_pdu.sh progress --dh s2
 ./rno2_pdu.sh spares --dh s2
@@ -432,8 +445,10 @@ CSVs and `> file` redirects stay clean). Force with `--color always`, disable wi
 # 4. Snapshot the manifest for the wave's records
 ./rno2_pdu.sh manifest --dh s2 > s2_manifest_$(date +%F).csv
 
-# 5. After each rack's PDU swap is verified, tick the ledger and re-check progress
+# 5. After each rack's PDU swap is verified, tick the ledger, publish it, re-check
 echo "s2-r024" >> done_racks.txt
+sort -u -o done_racks.txt done_racks.txt
+git commit -am "chore(ledger): s2-r024 PDU swap complete" && git push
 ./rno2_pdu.sh progress --dh s2
 ```
 

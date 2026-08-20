@@ -46,11 +46,11 @@ unreachable the script exits with a message pointing at `--vm-url` and the mgmt-
 ```bash
 git clone git@github.com:alcala-dev/rno2-pdu-refresh.git
 cd rno2-pdu-refresh
-cp done_racks.txt.example done_racks.txt     # your progress ledger
 ./rno2_pdu.sh help
 ```
 
-No build step — it's a single Bash script with an embedded Python planner.
+No build step — it's a single Bash script with an embedded Python planner. The completion ledger
+(`done_racks.txt`) ships **tracked in the repo**, so a fresh clone already knows what's been swapped.
 
 ## Commands
 
@@ -100,19 +100,48 @@ computes the shortfall per `(sku, fabric)` and lists the **easy-win** `triage`/`
 
 ## The completion ledger — `done_racks.txt`
 
-One rack id per line (`s2-r024`); `#` comments and blank lines are ignored. Append a rack the moment its
-PDU swap is verified complete:
+**This file is shared state, tracked in git.** Everyone running the tracker reads the same ledger, so
+progress reads identically on every desktop — which only holds if completions are pushed. Keeping it in
+the repo is deliberate: `progress`, `racks`, `remaining`, `plan`, and `gameplan` all derive from it, so a
+completion that lives only on one laptop makes everyone else's numbers wrong and gets the same rack
+re-planned into somebody's next wave.
+
+Format: one rack id per line as it appears in `deviceslot` (`s2-r024`). `#` comments and blank lines are
+ignored. The file is kept **sorted and unique**.
+
+### Marking a rack complete — the required workflow
 
 ```bash
-echo "s2-r024" >> done_racks.txt
+git pull --rebase                                   # 1. start from everyone else's completions
+echo "s2-r024" >> done_racks.txt                    # 2. append the verified rack
+sort -u -o done_racks.txt done_racks.txt            # 3. re-sort (keeps merges clean, kills dupes)
+git commit -am "chore(ledger): s2-r024 PDU swap complete"
+git push                                            # 4. same day — don't sit on it
 ```
+
+Three conventions make this work with several people appending at once:
+
+- **Pull before you plan.** A stale ledger will hand you racks that are already done.
+- **Keep it sorted.** New ids land in the middle of the file rather than all colliding on the last line,
+  so concurrent appends usually merge without conflict. The file is pure data (no header comments)
+  precisely so `sort -u -o` is safe to run blind.
+- **On a conflict, take both sides.** The ledger is an append-only set, so a conflict is never a real
+  disagreement — union the two sides and re-sort:
+
+  ```bash
+  git checkout --ours done_racks.txt && git checkout --theirs done_racks.txt 2>/dev/null
+  grep -hvE '^\s*(#|<<<|>>>|===)' done_racks.txt | sort -u -o done_racks.txt
+  git add done_racks.txt && git rebase --continue
+  ```
 
 Once a rack is in the ledger it counts as **done for every org that had a node in it** — that is what
 makes "the big tenants need less work later" arithmetic correct instead of double-counted, since large
 tenants are decomposed rack-by-rack as their racks get swapped inside other orgs' waves.
 
-Optionally, `--scope <file>` (a rack allowlist, one id per line) limits every view to the racks actually
-in scope for the refresh. Default scope is every rack currently reporting a node.
+Point the tracker at a different ledger with `--done <file>` or `DONE_FILE=<file>` — useful for
+what-if planning without touching shared state. Separately, `--scope <file>` (a rack allowlist, one id
+per line) limits every view to the racks actually in scope for the refresh; default scope is every rack
+currently reporting a node.
 
 ## Flags and environment
 
@@ -159,6 +188,9 @@ rack,dh,fabric,slot,bmn,node,serial,bmc_ip,org,sku,state,done,row
 ## Typical daily loop
 
 ```bash
+# 0. Sync the shared ledger first — someone else may have finished racks
+git pull --rebase
+
 # 1. Where do we stand, and can we cover the SKUs in play today?
 ./rno2_pdu.sh progress --dh s2
 ./rno2_pdu.sh spares   --dh s2
@@ -174,8 +206,10 @@ rack,dh,fabric,slot,bmn,node,serial,bmc_ip,org,sku,state,done,row
 # 4. Snapshot the manifest for the wave's records
 ./rno2_pdu.sh manifest --dh s2 > s2_manifest_$(date +%F).csv
 
-# 5. After each swap is verified, tick the ledger and re-check
+# 5. After each swap is verified, tick the ledger, publish it, and re-check
 echo "s2-r024" >> done_racks.txt
+sort -u -o done_racks.txt done_racks.txt
+git commit -am "chore(ledger): s2-r024 PDU swap complete" && git push
 ./rno2_pdu.sh progress --dh s2
 ```
 
@@ -194,7 +228,7 @@ echo "s2-r024" >> done_racks.txt
 
 ```
 rno2_pdu.sh                            # the tracker (read-only)
-done_racks.txt.example                 # completion-ledger template
+done_racks.txt                         # SHARED completion ledger — commit and push every completion
 docs/RNO2-PDU-Refresh-Proposal.md      # execution plan: site constraints, per-rack runbook,
                                        # core queries, wave sequencing, safety gates
 ```

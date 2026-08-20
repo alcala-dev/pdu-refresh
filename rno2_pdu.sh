@@ -26,6 +26,13 @@
 # each rack's PDU is swapped. `#' comments and blank lines are ignored. Once a
 # rack is in the ledger it is counted done for EVERY org that had a node in it.
 #
+# done_racks.txt is SHARED STATE, TRACKED IN GIT — several people run this tool
+# and progress must match on every desktop. So: `git pull --rebase' before you
+# plan a wave, and commit+push each completion the same day (keep the file
+# sorted with `sort -u -o done_racks.txt done_racks.txt' to keep merges clean).
+# An unpushed completion is invisible to everyone else and will get re-planned
+# into someone's next wave. Use DONE_FILE / --done for private what-if ledgers.
+#
 # Scope (optional): SCOPE_FILE with one rack id per line limits every view to the
 # racks actually in the refresh scope (e.g. the manager's list). Default = every
 # rack currently reporting a node.
