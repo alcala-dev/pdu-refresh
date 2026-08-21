@@ -44,7 +44,7 @@ unreachable the script exits with a message pointing at `--vm-url` and the mgmt-
 ## Install
 
 ```bash
-git clone git@github.com:alcala-dev/rno2-pdu-refresh.git
+git clone https://github.com/alcala-dev/rno2-pdu-refresh.git
 cd rno2-pdu-refresh
 ./rno2_pdu.sh help
 ```
