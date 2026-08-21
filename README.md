@@ -193,10 +193,10 @@ git pull --rebase
 
 # 1. Where do we stand, and can we cover the SKUs in play today?
 ./rno2_pdu.sh progress --dh s2
-./rno2_pdu.sh spares   --dh s2
+./rno2_pdu.sh spares --dh s2
 
 # 2. Let the planner pick this wave and build the backfill plan
-./rno2_pdu.sh plan     --dh s2            # summary: picks, spares committed, easy-wins
+./rno2_pdu.sh plan --dh s2            # summary: picks, spares committed, easy-wins
 ./rno2_pdu.sh gameplan --dh s2            # the four actionable lists
 ./rno2_pdu.sh remaining --dh s2           # per-org progress cross-check
 
