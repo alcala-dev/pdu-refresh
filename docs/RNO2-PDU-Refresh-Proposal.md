@@ -6,7 +6,7 @@
 > as of query time — re-pull before each wave; counts drift daily.
 
 > **Path note:** the tracker referenced throughout (§8) lives at the root of this repository as
-> `./rno2_pdu.sh`. `return_to_fleet.sh`, `notes/RUNBOOK.md`, and `notes/command_notes.md` are separate
+> `./pdu.sh`. `return_to_fleet.sh`, `notes/RUNBOOK.md`, and `notes/command_notes.md` are separate
 > internal ops artifacts and are **not** part of this repo.
 
 ---
@@ -108,7 +108,7 @@ the decision gate in §6. Confirm with change-management whether any customer/se
 regardless of impact; otherwise proceed on the no-MAINT path.
 
 **0. Record.** Open the **DO/hardware ticket** for the rack (route by sector: SEC2/4/6 → `dct-ops`,
-SEC1 → SDA) and add the rack to `done_racks.txt` when complete. Skip the MAINT unless §6 says it's required.
+SEC1 → SDA) and add the rack to `completed/rno2/done_racks.txt` when complete. Skip the MAINT unless §6 says it's required.
 
 **1. Enumerate the rack (authoritative).** Get every node in the rack with state + org + serial + BMC IP
 (§4 query). Freeze this as the rack's node list.
@@ -273,7 +273,7 @@ Two rules make this safe (non-negotiable):
    spares **per node** — SKUs differ *within* a rack (verified: `s2-r024` node-01 = `GPU-H100-02`,
    node-02 = `GPU-H100-04`). Do not pull a customer's prod node without its spare/notification.
 2. **Track completion by rack, not by org.** Once a rack's PDU is swapped, *all* its nodes (every org)
-   are done. Maintain a `done_racks.txt` ledger and compute **remaining racks per org = its racks minus
+   are done. Maintain the `completed/rno2/done_racks.txt` ledger and compute **remaining racks per org = its racks minus
    already-swapped racks** (query below) — that's the real progress metric and what makes "less work on
    the big orgs later" true rather than double-counted.
 
@@ -338,7 +338,14 @@ the rack; otherwise proceed on the no-MAINT path (DO ticket + co-tenant courtesy
 
 ---
 
-## 8. Tracking & monitoring — `rno2_pdu.sh`
+## 8. Tracking & monitoring — `pdu.sh`
+
+> **Multi-site note.** The tracker now covers several legacy sites and lives in the `pdu-refresh`
+> repo (formerly `rno2-pdu-refresh`, script formerly `rno2_pdu.sh`). Every command below operates on
+> RNO2 because `rno2` is the default `--site`; pass `--site us-west-02` / `--site us-west-04` for the
+> others. Each site keeps its own ledger under `completed/<site>/`, so completions never mix across
+> regions. See the repo README and `docs/SITES.md`.
+
 
 A **read-only** tracker that pulls the live BareMetalNode picture for RNO2 straight from VictoriaMetrics,
 joins state + org + SKU, and renders the manifest and progress you drive the refresh from. It never
@@ -352,7 +359,7 @@ completion ledger.
   serves RNO2). Run from a jump host / VPN-connected shell. If unreachable, pass `--vm-url <endpoint>` or
   fall back to the mgmt cluster (`tls rno2 mgmt` + kubectl — see the script header and `notes/RUNBOOK.md`).
 
-### The completion ledger — `done_racks.txt`
+### The completion ledger — `completed/rno2/done_racks.txt`
 One rack id per line (e.g. `s2-r024`); `#` comments and blank lines ignored. **Append a rack the moment
 its PDU swap is verified complete.** Once a rack is in the ledger it counts as done for *every* org that
 had a node in it — that's what makes the "big orgs need less work later" math correct.
@@ -362,8 +369,8 @@ match on every desktop. So marking a rack complete is a four-step action, not a 
 completion is invisible to everyone else and will get re-planned into someone's next wave:
 ```bash
 git pull --rebase                                   # start from everyone else's completions
-echo "s2-r024" >> done_racks.txt                    # mark a rack complete
-sort -u -o done_racks.txt done_racks.txt            # keep sorted — minimizes merge conflicts
+echo "s2-r024" >> completed/rno2/done_racks.txt                    # mark a rack complete
+sort -u -o completed/rno2/done_racks.txt completed/rno2/done_racks.txt            # keep sorted — minimizes merge conflicts
 git commit -am "chore(ledger): s2-r024 PDU swap complete" && git push
 ```
 **Pull before planning a wave**, or the planner will hand you racks that are already done. A merge
@@ -375,17 +382,17 @@ scope for the refresh; default is every rack currently reporting a node.
 ### Commands (Phase 1 = S2/FAB7 → add `--dh s2` to any view)
 | Command | What it gives you |
 | --- | --- |
-| `./rno2_pdu.sh progress --dh s2` | Top-line dashboard: racks done/remaining, % complete, nodes parked, spare posture |
-| `./rno2_pdu.sh racks --dh s2` | One line per rack, with its `row` (= `ds.coreweave.com/physical-topology.row`): #nodes, #orgs, orgs, #prod, sku-mix, ready, DONE? |
-| `./rno2_pdu.sh rack s2-r024` | One rack in detail — node list (slot/bmn/state/org/sku/BMC) + per-SKU spare need vs ready availability |
-| `./rno2_pdu.sh row 1 --dh s2` | Every node on physical row 1 (all its racks): Rack/SLOT/BMN/STATE/ORG/DH/SKU/BMC_IP (`--dh 2` also works) |
-| `./rno2_pdu.sh row 2 --dh s2 --counts` | Same row, but per-STATE totals only (hold/production/ready/fail…) + TOTAL |
-| `./rno2_pdu.sh remaining --dh s2` | Racks left per org (honours the ledger); an org drops toward 0 as its racks get swapped |
-| `./rno2_pdu.sh spares --dh s2` | READY spare pool by SKU + recoverable pool (triage/fail/hold) by SKU |
-| `./rno2_pdu.sh plan --dh s2` | Pick the N easiest not-yet-swapped racks (default 16) + ready-backfill summary + easy-wins |
-| `./rno2_pdu.sh gameplan --dh s2` | The plan as actionable lists: rack list, prod→triage, ready spares, easy-wins |
-| `./rno2_pdu.sh manifest --dh s2` | Full per-node CSV (rack,dh,fabric,slot,bmn,node,serial,bmc_ip,org,sku,state,done,row) |
-| `./rno2_pdu.sh raw '<promql>'` | Escape hatch — run an arbitrary instant query, print the label sets |
+| `./pdu.sh progress --dh s2` | Top-line dashboard: racks done/remaining, % complete, nodes parked, spare posture |
+| `./pdu.sh racks --dh s2` | One line per rack, with its `row` (= `ds.coreweave.com/physical-topology.row`): #nodes, #orgs, orgs, #prod, sku-mix, ready, DONE? |
+| `./pdu.sh rack s2-r024` | One rack in detail — node list (slot/bmn/state/org/sku/BMC) + per-SKU spare need vs ready availability |
+| `./pdu.sh row 1 --dh s2` | Every node on physical row 1 (all its racks): Rack/SLOT/BMN/STATE/ORG/DH/SKU/BMC_IP (`--dh 2` also works) |
+| `./pdu.sh row 2 --dh s2 --counts` | Same row, but per-STATE totals only (hold/production/ready/fail…) + TOTAL |
+| `./pdu.sh remaining --dh s2` | Racks left per org (honours the ledger); an org drops toward 0 as its racks get swapped |
+| `./pdu.sh spares --dh s2` | READY spare pool by SKU + recoverable pool (triage/fail/hold) by SKU |
+| `./pdu.sh plan --dh s2` | Pick the N easiest not-yet-swapped racks (default 16) + ready-backfill summary + easy-wins |
+| `./pdu.sh gameplan --dh s2` | The plan as actionable lists: rack list, prod→triage, ready spares, easy-wins |
+| `./pdu.sh manifest --dh s2` | Full per-node CSV (rack,dh,fabric,slot,bmn,node,serial,bmc_ip,org,sku,state,done,row) |
+| `./pdu.sh raw '<promql>'` | Escape hatch — run an arbitrary instant query, print the label sets |
 
 ### `plan` / `gameplan` — the wave picker + backfill plan
 `plan` selects the **N easiest not-yet-swapped racks** (default 16; `--num` to change) and builds an
@@ -431,28 +438,28 @@ CSVs and `> file` redirects stay clean). Force with `--color always`, disable wi
 git pull --rebase
 
 # 1. Morning: where do we stand, and can we cover H100 today?
-./rno2_pdu.sh progress --dh s2
-./rno2_pdu.sh spares --dh s2
+./pdu.sh progress --dh s2
+./pdu.sh spares --dh s2
 
 # 2. Let the planner pick this wave's easiest 16 racks + the backfill/easy-win plan
-./rno2_pdu.sh plan --dh s2                # summary: picks, spares committed, easy-wins
-./rno2_pdu.sh gameplan --dh s2               # the four actionable lists (rack / prod→triage / spares / easy-wins)
-./rno2_pdu.sh remaining --dh s2              # per-org progress cross-check (auto-aligned + colored)
+./pdu.sh plan --dh s2                # summary: picks, spares committed, easy-wins
+./pdu.sh gameplan --dh s2               # the four actionable lists (rack / prod→triage / spares / easy-wins)
+./pdu.sh remaining --dh s2              # per-org progress cross-check (auto-aligned + colored)
 
 # 3. Before working a rack, freeze its node list + spare requirement
-./rno2_pdu.sh rack s2-r024
+./pdu.sh rack s2-r024
 
 # 4. Snapshot the manifest for the wave's records
-./rno2_pdu.sh manifest --dh s2 > s2_manifest_$(date +%F).csv
+./pdu.sh manifest --dh s2 > snapshots/rno2/s2_manifest_$(date +%F).csv
 
 # 5. After each rack's PDU swap is verified, tick the ledger, publish it, re-check
-echo "s2-r024" >> done_racks.txt
-sort -u -o done_racks.txt done_racks.txt
+echo "s2-r024" >> completed/rno2/done_racks.txt
+sort -u -o completed/rno2/done_racks.txt completed/rno2/done_racks.txt
 git commit -am "chore(ledger): s2-r024 PDU swap complete" && git push
-./rno2_pdu.sh progress --dh s2
+./pdu.sh progress --dh s2
 ```
 
 ### Overrides (env or flags)
 `VM_URL` / `--vm-url` (query endpoint) · `REGION` (default `RNO2`) · `DONE_FILE` / `--done` (ledger) ·
 `SCOPE_FILE` / `--scope` (rack allowlist) · `--dh <s2>` (datahall) · `--org <id>` (remaining view).
-Run `./rno2_pdu.sh help` for the full header.
+Run `./pdu.sh help` for the full header.

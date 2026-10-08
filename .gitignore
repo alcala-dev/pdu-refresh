@@ -13,9 +13,17 @@ tmp/
 # Local scope allowlists (site- or wave-specific)
 scope*.txt
 
-# NOTE: done_racks.txt is deliberately TRACKED, not ignored — it is the shared
-# completion ledger and must be identical for everyone running the tracker.
+# NOTE: completed/<site>/done_racks.txt is deliberately TRACKED, not ignored —
+# these are the shared completion ledgers and must be identical for everyone
+# running the tracker. One ledger per site so regions never mix:
+#   completed/rno2/done_racks.txt
+#   completed/us-west-02/done_racks.txt
+#   completed/us-west-04/done_racks.txt
 # Keep private what-if ledgers out of the way with DONE_FILE / --done instead.
+
+# Snapshots live under snapshots/<site>/. The *.csv rule above covers them, so a
+# snapshot you want to keep must be force-added (`git add -f`) — and remember
+# those manifests carry BMC IPs and serials.
 
 # macOS / editor cruft
 .DS_Store
